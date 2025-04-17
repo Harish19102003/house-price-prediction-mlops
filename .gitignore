@@ -1,0 +1,21 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs and outputs
+*.log
+
+# Virtual environment
+venv/
+
+# MLflow artifacts
+mlruns/
+
+# OS-specific files
+.DS_Store
+
+# Environment/config files
+.env
