@@ -15,7 +15,7 @@ A production-ready machine learning pipeline for predicting house prices using M
 
 ```bash
 git clone https://github.com/Harish19102003/house-price-prediction-mlops.git
-cd house-price-prediction
+cd house-price-prediction-mlops
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
