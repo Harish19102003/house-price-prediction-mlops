@@ -49,9 +49,8 @@ house-price-prediction/
 ├── requirements.txt      # Python dependencies
 ├── .gitignore            # Git ignore rules
 ├── README.md             # Project documentation
+├── roadmap.md            # Detailed project phases, tasks, and goals
 └── setup.py              # For packaging and installation
-└── roadmap.md            # Detailed project phases, tasks, and goals
-
 ```
 
 ## 🧪 Run the Pipeline (Example)
