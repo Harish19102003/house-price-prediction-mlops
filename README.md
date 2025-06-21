@@ -10,6 +10,7 @@ A production-ready machine learning pipeline for predicting house prices using M
 - CI/CD-ready structure
 - Streamlit UI 
 - Dockerized for deployment
+- [Project Roadmap](./roadmap.md) – Detailed breakdown of phases, milestones, and deliverables
 
 ## 🔧 Setup
 
@@ -49,6 +50,8 @@ house-price-prediction/
 ├── .gitignore            # Git ignore rules
 ├── README.md             # Project documentation
 └── setup.py              # For packaging and installation
+└── roadmap.md            # Detailed project phases, tasks, and goals
+
 ```
 
 ## 🧪 Run the Pipeline (Example)
