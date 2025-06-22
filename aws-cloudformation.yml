@@ -1,0 +1,415 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'House Price Prediction MLOps Pipeline - EC2 Instance with Docker'
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - c5.large
+      - c5.xlarge
+    Description: EC2 instance type for the MLOps pipeline
+  
+  VolumeSize:
+    Type: Number
+    Default: 20
+    MinValue: 8
+    MaxValue: 100
+    Description: Size of the root volume in GB
+  
+  AllowedIP:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: IP address range allowed to connect via SSH (use 0.0.0.0/0 for any IP)
+
+Resources:
+  # VPC and Network Configuration
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-VPC'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-IGW'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicSubnet'
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-RouteTable'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+
+  # Security Group for EC2 Instance
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecurityGroup'
+      GroupDescription: Security group for House Price Prediction MLOps pipeline
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # SSH access
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedIP
+          Description: SSH access
+        # HTTP
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP access
+        # HTTPS
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS access
+        # Streamlit app
+        - IpProtocol: tcp
+          FromPort: 8501
+          ToPort: 8501
+          CidrIp: 0.0.0.0/0
+          Description: Streamlit application
+        # MLflow tracking
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+          Description: MLflow tracking server
+        # Jupyter notebook (optional)
+        - IpProtocol: tcp
+          FromPort: 8888
+          ToPort: 8888
+          CidrIp: !Ref AllowedIP
+          Description: Jupyter notebook (optional)
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+
+  # IAM Role for EC2 Instance
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: EC2CustomPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeTags
+                  - ec2:DescribeVolumes
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: '*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # EC2 Instance
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c02fb55956c7d316  # Amazon Linux 2023 AMI (us-east-1)
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref PublicSubnet
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref VolumeSize
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y git curl wget unzip
+          
+          # Install Docker
+          yum install -y docker
+          systemctl start docker
+          systemctl enable docker
+          usermod -a -G docker ec2-user
+          
+          # Install Docker Compose
+          curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          
+          # Create deployment directory
+          mkdir -p /opt/house-price-mlops
+          cd /opt/house-price-mlops
+          
+          # Clone the project
+          git clone https://github.com/Harish19102003/house-price-prediction-mlops.git .
+          
+          # Create environment file
+          cat > .env << 'EOF'
+          # MLflow Configuration
+          MLFLOW_TRACKING_USERNAME=admin
+          MLFLOW_TRACKING_PASSWORD=admin123
+          MLFLOW_SERVE_ARTIFACTS=true
+          
+          # Streamlit Configuration
+          STREAMLIT_SERVER_ENABLE_CORS=true
+          STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
+          
+          # Security Configuration
+          DOCKER_NETWORK_MODE=bridge
+          EOF
+          
+          # Set permissions
+          chmod 600 .env
+          
+          # Build and start services
+          docker-compose build
+          docker-compose up -d
+          
+          # Create health check script
+          cat > health_check.sh << 'EOF'
+          #!/bin/bash
+          STREAMLIT_URL="http://localhost:8501"
+          MLFLOW_URL="http://localhost:5000/health"
+          
+          echo "Checking Streamlit..."
+          if curl -f $STREAMLIT_URL > /dev/null 2>&1; then
+              echo "✅ Streamlit: Healthy"
+          else
+              echo "❌ Streamlit: Unhealthy"
+          fi
+          
+          echo "Checking MLflow..."
+          if curl -f $MLFLOW_URL > /dev/null 2>&1; then
+              echo "✅ MLflow: Healthy"
+          else
+              echo "❌ MLflow: Unhealthy"
+          fi
+          EOF
+          
+          chmod +x health_check.sh
+          
+          # Create backup script
+          cat > backup.sh << 'EOF'
+          #!/bin/bash
+          BACKUP_DIR="/opt/backups/house-price-mlops"
+          DATE=$(date +%Y%m%d_%H%M%S)
+          
+          mkdir -p $BACKUP_DIR
+          
+          # Backup data
+          tar -czf $BACKUP_DIR/data_$DATE.tar.gz data/
+          
+          # Backup models
+          tar -czf $BACKUP_DIR/models_$DATE.tar.gz models/
+          
+          # Backup docs
+          tar -czf $BACKUP_DIR/docs_$DATE.tar.gz docs/
+          
+          # Backup MLflow data
+          tar -czf $BACKUP_DIR/mlruns_$DATE.tar.gz mlruns/
+          
+          echo "Backup completed: $BACKUP_DIR"
+          EOF
+          
+          chmod +x backup.sh
+          
+          # Run the ML pipeline
+          docker-compose exec streamlit python main.py --step all --skip-deployment
+          
+          # Print deployment information
+          echo "=========================================="
+          echo "House Price Prediction MLOps Pipeline"
+          echo "=========================================="
+          echo "Instance ID: $(curl -s http://169.254.169.254/latest/meta-data/instance-id)"
+          echo "Public IP: $(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)"
+          echo ""
+          echo "Application URLs:"
+          echo "  Streamlit App: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8501"
+          echo "  MLflow UI: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):5000"
+          echo ""
+          echo "Useful Commands:"
+          echo "  Check status: docker-compose ps"
+          echo "  View logs: docker-compose logs -f"
+          echo "  Health check: ./health_check.sh"
+          echo "  Backup: ./backup.sh"
+          echo "  Stop services: docker-compose down"
+          echo "  Restart services: docker-compose restart"
+          echo "=========================================="
+          
+          # Create a simple status page
+          cat > /var/www/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>House Price Prediction MLOps</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  .container { max-width: 800px; margin: 0 auto; }
+                  .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+                  .healthy { background-color: #d4edda; color: #155724; }
+                  .unhealthy { background-color: #f8d7da; color: #721c24; }
+                  .url { background-color: #e2e3e5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>🏠 House Price Prediction MLOps Pipeline</h1>
+                  <p>Your ML pipeline is running on AWS EC2!</p>
+                  
+                  <h2>Application URLs:</h2>
+                  <div class="url">
+                      <strong>Streamlit App:</strong> <a href="http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8501" target="_blank">http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8501</a>
+                  </div>
+                  <div class="url">
+                      <strong>MLflow UI:</strong> <a href="http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):5000" target="_blank">http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):5000</a>
+                  </div>
+                  
+                  <h2>Instance Information:</h2>
+                  <p><strong>Instance ID:</strong> $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</p>
+                  <p><strong>Instance Type:</strong> $(curl -s http://169.254.169.254/latest/meta-data/instance-type)</p>
+                  <p><strong>Public IP:</strong> $(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)</p>
+                  
+                  <h2>Documentation:</h2>
+                  <p>For detailed usage instructions, see the <a href="https://github.com/Harish19102003/house-price-prediction-mlops" target="_blank">project repository</a>.</p>
+              </div>
+          </body>
+          </html>
+          EOF
+          
+          # Install and start Apache for status page
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          
+          echo "Deployment completed successfully! 🎉"
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-MLOps-Instance'
+        - Key: Project
+          Value: House-Price-Prediction-MLOps
+        - Key: Environment
+          Value: Production
+
+Outputs:
+  InstanceId:
+    Description: Instance ID of the newly created EC2 instance
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
+
+  PublicIP:
+    Description: Public IP address of the newly created EC2 instance
+    Value: !GetAtt EC2Instance.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicIP'
+
+  PublicDNS:
+    Description: Public DNS name of the newly created EC2 instance
+    Value: !GetAtt EC2Instance.PublicDnsName
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicDNS'
+
+  StreamlitURL:
+    Description: URL for the Streamlit application
+    Value: !Sub 'http://${EC2Instance.PublicIp}:8501'
+    Export:
+      Name: !Sub '${AWS::StackName}-StreamlitURL'
+
+  MLflowURL:
+    Description: URL for the MLflow tracking server
+    Value: !Sub 'http://${EC2Instance.PublicIp}:5000'
+    Export:
+      Name: !Sub '${AWS::StackName}-MLflowURL'
+
+  StatusURL:
+    Description: URL for the deployment status page
+    Value: !Sub 'http://${EC2Instance.PublicIp}'
+    Export:
+      Name: !Sub '${AWS::StackName}-StatusURL'
+
+  SecurityGroupId:
+    Description: Security Group ID
+    Value: !Ref SecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroupId'
+
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCId' 
