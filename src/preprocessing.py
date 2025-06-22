@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 import os
+from typing import Optional, List
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.compose import ColumnTransformer
@@ -48,7 +49,8 @@ def fill_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-def encode_categorical_features(df: pd.DataFrame, target_column: str = 'SalePrice') -> pd.DataFrame:
+def encode_categorical_features(df: pd.DataFrame, target_column: str = 'SalePrice', 
+                              training_columns: Optional[List[str]] = None) -> pd.DataFrame:
     """
     Encode categorical features for machine learning.
     Uses Label Encoding for ordinal features and One-Hot Encoding for nominal features.
@@ -56,6 +58,7 @@ def encode_categorical_features(df: pd.DataFrame, target_column: str = 'SalePric
     Parameters:
         df: The dataframe with categorical features.
         target_column: Name of the target column to exclude from encoding.
+        training_columns: List of expected column names from training (for inference).
         
     Returns:
         df: The dataframe with encoded categorical features.
@@ -112,9 +115,26 @@ def encode_categorical_features(df: pd.DataFrame, target_column: str = 'SalePric
         df_encoded = pd.get_dummies(df_encoded, columns=remaining_categorical, 
                                   prefix=remaining_categorical, drop_first=True)
     
+    # If we have training columns, ensure we have the same columns
+    if training_columns is not None:
+        # Add missing columns with zeros
+        missing_cols = set(training_columns) - set(df_encoded.columns)
+        for col in missing_cols:
+            df_encoded[col] = 0
+        
+        # Remove extra columns that weren't in training
+        extra_cols = set(df_encoded.columns) - set(training_columns)
+        if extra_cols:
+            print(f"Removing extra columns not in training: {extra_cols}")
+            df_encoded = df_encoded.drop(columns=list(extra_cols))
+        
+        # Reorder columns to match training exactly
+        df_encoded = df_encoded[training_columns]
+    
     return df_encoded
 
-def preprocess_data(df: pd.DataFrame, target_column: str = 'SalePrice') -> pd.DataFrame:
+def preprocess_data(df: pd.DataFrame, target_column: str = 'SalePrice', 
+                   training_columns: Optional[List[str]] = None) -> pd.DataFrame:
     """
     Complete preprocessing pipeline:
     1. Fill missing values
@@ -124,6 +144,7 @@ def preprocess_data(df: pd.DataFrame, target_column: str = 'SalePrice') -> pd.Da
     Parameters:
         df: The raw dataframe.
         target_column: Name of the target column.
+        training_columns: List of expected column names from training (for inference).
         
     Returns:
         df_processed: The fully processed dataframe ready for ML.
@@ -135,7 +156,7 @@ def preprocess_data(df: pd.DataFrame, target_column: str = 'SalePrice') -> pd.Da
     print(f"After filling missing values: {df_filled.shape}")
     
     # Step 2: Encode categorical features
-    df_encoded = encode_categorical_features(df_filled, target_column)
+    df_encoded = encode_categorical_features(df_filled, target_column, training_columns)
     print(f"After encoding categorical features: {df_encoded.shape}")
     
     # Step 3: Convert all columns to numeric (except target if it's categorical)

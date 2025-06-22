@@ -13,7 +13,7 @@ from pathlib import Path
 import logging
 
 # Add src to path
-sys.path.append(str(Path(__file__parent / "src")))
+sys.path.append(str(Path(__file__).parent / "src"))
 
 from src.config import Config
 from src.data_ingestion import DataIngestion

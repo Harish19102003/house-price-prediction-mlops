@@ -94,30 +94,21 @@ class HousePricePredictor:
             else:
                 df = data.copy()
             
-            # Apply the same preprocessing as training
-            df_processed = preprocess_data(df, target_column=self.config.TARGET_COLUMN)
+            # Apply the same preprocessing as training, passing expected columns
+            df_processed = preprocess_data(df, target_column=self.config.TARGET_COLUMN, 
+                                         training_columns=self.feature_columns)
             
-            # Ensure all expected features are present and in correct order
-            if self.feature_columns:
-                # Add missing columns with zeros
-                missing_cols = set(self.feature_columns) - set(df_processed.columns)
-                for col in missing_cols:
-                    df_processed[col] = 0
-                
-                # Remove extra columns that weren't in training
-                extra_cols = set(df_processed.columns) - set(self.feature_columns)
-                if extra_cols:
-                    logger.warning(f"Removing extra columns not in training: {extra_cols}")
-                    df_processed = df_processed.drop(columns=list(extra_cols))
-                
-                # Reorder columns to match training exactly
-                df_processed = df_processed[self.feature_columns]
-            
-            # Apply scaling if available
+            # Apply scaling if available - only scale columns that the scaler was trained on
             if self.scaler is not None:
-                numerical_columns = df_processed.select_dtypes(include=[np.number]).columns.tolist()
-                if numerical_columns:
-                    df_processed[numerical_columns] = self.scaler.transform(df_processed[numerical_columns])
+                # Get the feature names that the scaler was trained on
+                scaler_feature_names = self.scaler.feature_names_in_
+                
+                # Only scale columns that exist in both the processed data and scaler features
+                columns_to_scale = [col for col in scaler_feature_names if col in df_processed.columns]
+                
+                if columns_to_scale:
+                    # Ensure the columns are in the same order as the scaler expects
+                    df_processed[columns_to_scale] = self.scaler.transform(df_processed[columns_to_scale])
             
             logger.info(f"Input preprocessed: {df_processed.shape}")
             return df_processed
