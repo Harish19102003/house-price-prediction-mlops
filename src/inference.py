@@ -97,13 +97,20 @@ class HousePricePredictor:
             # Apply the same preprocessing as training
             df_processed = preprocess_data(df, target_column=self.config.TARGET_COLUMN)
             
-            # Ensure all expected features are present
+            # Ensure all expected features are present and in correct order
             if self.feature_columns:
+                # Add missing columns with zeros
                 missing_cols = set(self.feature_columns) - set(df_processed.columns)
                 for col in missing_cols:
                     df_processed[col] = 0
                 
-                # Reorder columns to match training
+                # Remove extra columns that weren't in training
+                extra_cols = set(df_processed.columns) - set(self.feature_columns)
+                if extra_cols:
+                    logger.warning(f"Removing extra columns not in training: {extra_cols}")
+                    df_processed = df_processed.drop(columns=list(extra_cols))
+                
+                # Reorder columns to match training exactly
                 df_processed = df_processed[self.feature_columns]
             
             # Apply scaling if available
@@ -215,6 +222,53 @@ class HousePricePredictor:
             logger.error(f"Error saving example predictions: {e}")
             raise
 
+    def generate_submission(self, test_file_path: str, output_file_path: str) -> None:
+        """
+        Generate Kaggle submission file from test data.
+        
+        Args:
+            test_file_path: Path to test.csv file
+            output_file_path: Path to save submission.csv
+        """
+        try:
+            logger.info(f"Loading test data from: {test_file_path}")
+            
+            # Load test data
+            test_df = pd.read_csv(test_file_path)
+            logger.info(f"Loaded {len(test_df)} test samples")
+            
+            # Make predictions
+            predictions = self.predict(test_df)
+            
+            # Create submission DataFrame
+            submission_df = pd.DataFrame({
+                'Id': test_df['Id'],
+                'SalePrice': predictions
+            })
+            
+            # Save to output file
+            output_path = Path(output_file_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            submission_df.to_csv(output_path, index=False)
+            
+            logger.info(f"Submission file saved to: {output_path}")
+            logger.info(f"Generated {len(submission_df)} predictions")
+            
+            # Print sample predictions
+            print(f"\n=== Kaggle Submission Generated ===")
+            print(f"File: {output_path}")
+            print(f"Samples: {len(submission_df)}")
+            print(f"\nSample predictions:")
+            for i in range(min(5, len(submission_df))):
+                print(f"  ID {submission_df.iloc[i]['Id']}: ${submission_df.iloc[i]['SalePrice']:,.2f}")
+            
+            if len(submission_df) > 5:
+                print(f"  ... and {len(submission_df) - 5} more predictions")
+            
+        except Exception as e:
+            logger.error(f"Error generating submission: {e}")
+            raise
+
 def create_sample_data() -> List[Dict]:
     """Create sample house data for testing predictions."""
     return [
@@ -309,6 +363,7 @@ if __name__ == "__main__":
                        help="Source of the model (local or mlflow)")
     parser.add_argument("--input-file", type=str, help="Path to CSV file with input data")
     parser.add_argument("--sample", action="store_true", help="Run prediction on sample data")
+    parser.add_argument("--output-file", type=str, help="Path to save submission.csv")
     
     args = parser.parse_args()
     
@@ -330,11 +385,18 @@ if __name__ == "__main__":
     elif args.input_file:
         # Load from file
         df = pd.read_csv(args.input_file)
-        predictions = predictor.predict(df)
         
-        print(f"\n=== Predictions for {len(predictions)} samples ===")
-        for i, pred in enumerate(predictions):
-            print(f"Sample {i+1}: ${pred:,.2f}")
+        if args.output_file:
+            # Generate submission file
+            predictor.generate_submission(args.input_file, args.output_file)
+        else:
+            # Just make predictions and display
+            predictions = predictor.predict(df)
+            
+            print(f"\n=== Predictions for {len(predictions)} samples ===")
+            for i, pred in enumerate(predictions):
+                print(f"Sample {i+1}: ${pred:,.2f}")
     
     else:
-        print("Please provide --input-file or use --sample for example predictions") 
+        print("Please provide --input-file or use --sample for example predictions")
+        print("For Kaggle submission: --input-file data/raw/test.csv --output-file submission.csv") 
