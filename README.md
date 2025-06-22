@@ -79,7 +79,6 @@ house-price-prediction-mlops/
 │   ├── streamlit_app.py           # Streamlit web application
 │   └── utils.py                   # Helper functions (logging, etc.)
 ├── venv/                          # Python virtual environment
-├── .vscode/                       # VS Code configuration
 ├── .git/                          # Git repository
 ├── Dockerfile                     # Multi-stage Dockerfile
 ├── docker-compose.yml             # Docker Compose for MLflow + App
