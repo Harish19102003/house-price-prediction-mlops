@@ -117,10 +117,12 @@ def encode_categorical_features(df: pd.DataFrame, target_column: str = 'SalePric
     
     # If we have training columns, ensure we have the same columns
     if training_columns is not None:
-        # Add missing columns with zeros
+        # Add missing columns with zeros - use a more efficient approach
         missing_cols = set(training_columns) - set(df_encoded.columns)
-        for col in missing_cols:
-            df_encoded[col] = 0
+        if missing_cols:
+            # Create a DataFrame with missing columns and concatenate
+            missing_df = pd.DataFrame(0, index=df_encoded.index, columns=list(missing_cols))
+            df_encoded = pd.concat([df_encoded, missing_df], axis=1)
         
         # Remove extra columns that weren't in training
         extra_cols = set(df_encoded.columns) - set(training_columns)
