@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # MLflow Tracking Server
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: house-price-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/app/mlruns
+      - ./models:/app/models
+      - ./docs:/app/docs
+    environment:
+      - MLFLOW_TRACKING_URI=http://localhost:5000
+      - MLFLOW_SERVE_ARTIFACTS=true
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri file:/app/mlruns
+      --default-artifact-root file:/app/mlruns
+      --serve-artifacts
+    networks:
+      - mlops-network
+    restart: unless-stopped
+
+  # Streamlit App
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: house-price-streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./docs:/app/docs
+      - ./mlruns:/app/mlruns
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_ENABLE_CORS=false
+      - STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
+    depends_on:
+      - mlflow
+    networks:
+      - mlops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Development service (optional)
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: house-price-dev
+    ports:
+      - "8888:8888"  # Jupyter
+      - "8502:8501"  # Streamlit (different port)
+      - "5001:5000"  # MLflow (different port)
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./docs:/app/docs
+      - ./mlruns:/app/mlruns
+    environment:
+      - MLFLOW_TRACKING_URI=http://localhost:5001
+      - JUPYTER_ENABLE_LAB=yes
+    command: >
+      bash -c "
+        echo 'Starting development environment...' &&
+        echo 'Jupyter Lab: http://localhost:8888' &&
+        echo 'Streamlit App: http://localhost:8502' &&
+        echo 'MLflow UI: http://localhost:5001' &&
+        jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+      "
+    networks:
+      - mlops-network
+    profiles:
+      - dev
+
+networks:
+  mlops-network:
+    driver: bridge
+
+volumes:
+  mlruns:
+  models:
+  docs: 
