@@ -19,3 +19,4 @@ mlruns/
 
 # Environment/config files
 .env
+.vscode/
