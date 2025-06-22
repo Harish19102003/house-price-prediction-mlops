@@ -1,0 +1,27 @@
+{
+  "model_evaluation_summary": {
+    "timestamp": "2025-06-22T11:26:03.705523",
+    "test_samples": 292,
+    "metrics": {
+      "mae": 16685.291350064213,
+      "mse": 713542525.7798525,
+      "rmse": 26712.216788949816,
+      "r2": 0.9069736401678379,
+      "mean_residual": 1017.4292192851027,
+      "std_residual": 26692.833561905663,
+      "max_error": 157703.1875,
+      "prediction_range": 537187.5,
+      "actual_range": 719689.0,
+      "mape": 10.053815248858356
+    }
+  },
+  "performance_analysis": {
+    "r2_interpretation": "Excellent: Model explains \u226590% of variance",
+    "rmse_interpretation": "Good: Acceptable prediction error",
+    "mape_interpretation": "Moderate: Reasonably accurate predictions",
+    "overall_performance": "Good"
+  },
+  "recommendations": [
+    "Model shows bias - consider feature transformations"
+  ]
+}
